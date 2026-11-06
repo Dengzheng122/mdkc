@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>明道工作 · 资料看板</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f4f6f8; color: #222; }
+  header { background: #17375e; color: #fff; padding: 20px 16px 16px; }
+  header h1 { margin: 0 0 6px; font-size: 22px; }
+  header p { margin: 4px 0; font-size: 13px; opacity: .85; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 12px 40px; }
+  .banner { display: none; margin: 12px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+  .banner.warn { display: block; background: #fff7e6; border: 1px solid #f5c542; color: #7a5b00; }
+  .banner.ok { display: block; background: #e6f7e6; border: 1px solid #7fc87f; color: #1d5c1d; }
+  .banner.err { display: block; background: #fdecea; border: 1px solid #f5a3a3; color: #8f1d1d; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .toolbar input[type=search] { flex: 1 1 160px; padding: 9px 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
+  button { cursor: pointer; border: 0; border-radius: 8px; padding: 9px 14px; font-size: 14px; }
+  .btn-primary { background: #17375e; color: #fff; }
+  .btn-ghost { background: #fff; border: 1px solid #ccc; color: #333; }
+  .btn-ghost.active { background: #17375e; color: #fff; border-color: #17375e; }
+  .btn-small { padding: 6px 10px; font-size: 13px; border-radius: 6px; }
+  .player-box { background: #000; border-radius: 12px; overflow: hidden; margin: 6px 0 16px; }
+  .player-box video { width: 100%; display: block; max-height: 54vh; background: #000; }
+  .now { background: #111; color: #eee; padding: 10px 12px; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .now a { color: #9ecbff; }
+  h2 { font-size: 17px; margin: 20px 0 10px; border-left: 4px solid #17375e; padding-left: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .card { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card .thumb { width: 100%; border-radius: 8px; display: block; margin-bottom: 8px; background: #eee; }
+  .card video.thumb { max-height: 170px; background: #000; }
+  .card h3 { margin: 0 0 4px; font-size: 15px; word-break: break-all; }
+  .meta { font-size: 12px; color: #777; margin-bottom: 8px; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 20px; margin-right: 6px; color: #fff; }
+  .tag.video { background: #c0392b; } .tag.ppt { background: #d35400; }
+  .tag.image { background: #27ae60; } .tag.pdf { background: #8e44ad; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions a, .actions button { text-decoration: none; }
+  .empty { color: #888; padding: 20px; text-align: center; }
+  footer { margin-top: 28px; font-size: 12px; color: #888; line-height: 1.8; border-top: 1px solid #ddd; padding-top: 12px; }
+  footer b { color: #555; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding:0">
+    <h1>📁 明道工作 · 资料看板</h1>
+    <p id="summary">正在加载…</p>
+    <p>文件服务：files.aqmdtmx.cn（公网直达，不用 Tailscale）· 看板：mdkc.aqmdtmx.cn</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="status" class="banner"></div>
+
+  <div class="toolbar">
+    <button id="refreshBtn" class="btn-primary" onclick="refreshList()">🔄 一键更新</button>
+    <input id="q" type="search" placeholder="搜文件名…" oninput="render()">
+    <button class="btn-ghost active" data-f="" onclick="setFilter('', this)">全部</button>
+    <button class="btn-ghost" data-f="video" onclick="setFilter('video', this)">🎬 视频</button>
+    <button class="btn-ghost" data-f="ppt" onclick="setFilter('ppt', this)">📊 PPT</button>
+    <button class="btn-ghost" data-f="image" onclick="setFilter('image', this)">🖼 图片</button>
+    <button class="btn-ghost" data-f="pdf" onclick="setFilter('pdf', this)">📄 PDF</button>
+  </div>
+
+  <div class="player-box" id="playerBox" style="display:none">
+    <video id="player" controls preload="metadata" playsinline></video>
+    <div class="now"><span id="nowTitle"></span><a id="nowDl" href="#" download>⬇ 下载当前视频</a></div>
+  </div>
+
+  <div id="list"></div>
+
+  <footer>
+    <b>说明</b><br>
+    1. 视频点「▶ 播放」在上方播放器里直接播，支持拖进度条；PPT 点「在线预览」用微软 Office 在线打开，点「下载」保存到手机/电脑。<br>
+    2. 「一键更新」会实时去文件服务拉最新目录：新增的文件、刚传完的视频都会出现；如果提示失败，多半是文件服务的 DNS 还没生效，等几分钟再点。<br>
+    3. 本看板是公开的 GitHub Pages，文件链接也是公开地址：<b>拿到链接的人就能直接下载这些文件，链接不要随便外传</b>。<br>
+    4. 上传中的临时文件（.~~#0）不会显示；传完变成正式 .mp4 后，点「一键更新」就能看到。
+  </footer>
+</div>
+
+<script>
+var BASE = "https://files.aqmdtmx.cn/";
+var manifest = null;      // {files:[...]}
+var filterType = "";
+var updatedNote = "";
+
+function encPath(p) {
+  return p.split("/").map(function (s) { return encodeURIComponent(s); }).join("/");
+}
+function fileUrl(f) { return BASE + encPath(f.path); }
+function fmtSize(b) {
+  if (b == null) return "";
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b / 1024).toFixed(0) + " KB";
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + " MB";
+  return (b / 1073741824).toFixed(2) + " GB";
+}
+function typeLabel(t) {
+  return { video: "视频", ppt: "PPT", image: "图片", pdf: "PDF", other: "文件" }[t] || "文件";
+}
+function isTemp(name) {
+  return name.indexOf(".~#") !== -1 || name.indexOf(".~@") !== -1 || name.charAt(0) === ".";
+}
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function setFilter(t, btn) {
+  filterType = t;
+  document.querySelectorAll(".btn-ghost").forEach(function (b) { b.classList.remove("active"); });
+  btn.classList.add("active");
+  render();
+}
+
+function playVideo(path, name) {
+  var box = document.getElementById("playerBox");
+  var v = document.getElementById("player");
+  box.style.display = "block";
+  v.src = fileUrl({ path: path });
+  document.getElementById("nowTitle").textContent = "▶ 正在播放：" + name;
+  document.getElementById("nowDl").href = fileUrl({ path: path });
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+  v.play().catch(function () {});
+}
+
+function cardHtml(f) {
+  var url = fileUrl(f);
+  var h = '<div class="card">';
+  if (f.type === "video") {
+    h += '<video class="thumb" preload="metadata" src="' + url + '#t=0.5" onclick="playVideo(' + JSON.stringify(f.path) + ',' + JSON.stringify(f.name) + ')"></video>';
+  } else if (f.type === "image") {
+    h += '<a href="' + url + '" target="_blank"><img class="thumb" loading="lazy" src="' + url + '" alt="' + esc(f.name) + '"></a>';
+  }
+  h += '<h3><span class="tag ' + f.type + '">' + typeLabel(f.type) + '</span>' + esc(f.name) + '</h3>';
+  h += '<div class="meta">' + (f.dir ? esc(f.dir) + " / " : "根目录") + fmtSize(f.size) + (f.mtime ? " · " + esc(f.mtime) : "") + "</div>";
+  h += '<div class="actions">';
+  if (f.type === "video") {
+    h += '<button class="btn-primary btn-small" onclick="playVideo(' + JSON.stringify(f.path) + ',' + JSON.stringify(f.name) + ')">▶ 播放</button>';
+  } else if (f.type === "pdf") {
+    h += '<a href="' + url + '" target="_blank"><button class="btn-primary btn-small">📄 在线查看</button></a>';
+  } else if (f.type === "ppt") {
+    var office = "https://view.officeapps.live.com/op/view.aspx?src=" + encodeURIComponent(url);
+    h += '<a href="' + office + '" target="_blank"><button class="btn-primary btn-small">👁 在线预览</button></a>';
+  } else if (f.type === "image") {
+    h += '<a href="' + url + '" target="_blank"><button class="btn-primary btn-small">🔍 看大图</button></a>';
+  }
+  h += '<a href="' + url + '" download><button class="btn-ghost btn-small">⬇ 下载</button></a>';
+  h += "</div></div>";
+  return h;
+}
+
+function render() {
+  if (!manifest) return;
+  var q = document.getElementById("q").value.trim().toLowerCase();
+  var files = manifest.files.filter(function (f) {
+    if (filterType && f.type !== filterType) return false;
+    if (q && f.name.toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+  var counts = { video: 0, ppt: 0, image: 0, pdf: 0 };
+  manifest.files.forEach(function (f) { if (counts[f.type] != null) counts[f.type]++; });
+  var totalMB = (manifest.files.reduce(function (a, f) { return a + (f.size || 0); }, 0) / 1048576).toFixed(0);
+  document.getElementById("summary").textContent =
+    "共 " + manifest.files.length + " 个文件（视频 " + counts.video + " · PPT " + counts.ppt +
+    " · 图片 " + counts.image + " · PDF " + counts.pdf + "，约 " + totalMB + " MB）" +
+    (updatedNote ? " · " + updatedNote : " · 清单更新于 " + (manifest.generated || ""));
+  var groups = {};
+  files.forEach(function (f) {
+    var g = f.dir || "根目录";
+    (groups[g] = groups[g] || []).push(f);
+  });
+  var html = "";
+  Object.keys(groups).sort().forEach(function (g) {
+    html += "<h2>" + esc(g) + "（" + groups[g].length + "）</h2><div class='grid'>";
+    groups[g].forEach(function (f) { html += cardHtml(f); });
+    html += "</div>";
+  });
+  document.getElementById("list").innerHTML = html || '<div class="empty">没有符合条件的文件</div>';
+}
+
+function setStatus(cls, text) {
+  var el = document.getElementById("status");
+  el.className = "banner " + cls;
+  el.textContent = text;
+}
+
+function checkService() {
+  fetch(BASE, { mode: "cors", cache: "no-store" }).then(function (r) {
+    if (r.ok) setStatus("ok", "✅ 文件服务已连通（files.aqmdtmx.cn），视频和 PPT 都能直接打开。");
+    else setStatus("err", "⚠️ 文件服务返回异常（HTTP " + r.status + "），文件可能暂时打不开，稍后再试。");
+  }).catch(function () {
+    setStatus("warn", "⚠️ 还没连上文件服务（files.aqmdtmx.cn）：多半是 DNS 记录还没加或没生效。加完记录等几分钟再刷新本页；看板本身不受影响。");
+  });
+}
+
+// 解析 nginx autoindex 页面：<a href="...">名</a>  日期  大小
+function parseAutoindex(html, prefix) {
+  var out = [];
+  var re = /<a href="([^"]+)">([^<]+)<\/a>\s+(\d\d-[A-Za-z]{3}-\d{4} \d\d:\d\d)\s+([^<\s]+)/g, m;
+  while ((m = re.exec(html)) !== null) {
+    var href = decodeURIComponent(m[1]);
+    var name = m[2];
+    if (href === "../" || name === "../") continue;
+    if (isTemp(name)) continue;
+    var sizeStr = m[4];
+    var size = null;
+    if (/^[\d.]+$/.test(sizeStr)) size = parseFloat(sizeStr);
+    else if (/^([\d.]+)K$/.test(sizeStr)) size = parseFloat(RegExp.$1) * 1024;
+    else if (/^([\d.]+)M$/.test(sizeStr)) size = parseFloat(RegExp.$1) * 1048576;
+    else if (/^([\d.]+)G$/.test(sizeStr)) size = parseFloat(RegExp.$1) * 1073741824;
+    var isDir = href.charAt(href.length - 1) === "/";
+    out.push({ name: name, href: href, isDir: isDir, size: size, mtime: m[3], prefix: prefix });
+  }
+  return out;
+}
+
+function typeOf(name) {
+  var n = name.toLowerCase();
+  if (/\.(mp4|mov|webm|mkv)$/.test(n)) return "video";
+  if (/\.(pptx?|key)$/.test(n)) return "ppt";
+  if (/\.(jpe?g|png|webp|gif)$/.test(n)) return "image";
+  if (/\.pdf$/.test(n)) return "pdf";
+  return "other";
+}
+
+function refreshList() {
+  var btn = document.getElementById("refreshBtn");
+  btn.disabled = true; btn.textContent = "⏳ 更新中…";
+  var found = [];
+  function walk(url, prefix) {
+    return fetch(url, { mode: "cors", cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();
+    }).then(function (html) {
+      var items = parseAutoindex(html, prefix);
+      var subs = [];
+      items.forEach(function (it) {
+        if (it.isDir) subs.push(it);
+        else found.push({ dir: prefix, name: it.name, path: (prefix ? prefix + "/" : "") + it.name,
+                          size: it.size, mtime: it.mtime, type: typeOf(it.name) });
+      });
+      var chain = Promise.resolve();
+      subs.forEach(function (s) {
+        chain = chain.then(function () {
+          return walk(url + encodeURIComponent(s.name) + "/", (prefix ? prefix + "/" : "") + s.name);
+        });
+      });
+      return chain;
+    });
+  }
+  walk(BASE, "").then(function () {
+    if (!found.length) throw new Error("目录是空的");
+    found.sort(function (a, b) { return (a.dir + a.name).localeCompare(b.dir + b.name, "zh-CN"); });
+    manifest = { generated: "刚刚在线更新", files: found };
+    updatedNote = "刚刚在线更新";
+    render();
+    setStatus("ok", "✅ 已更新：当前共 " + found.length + " 个文件（含新传完的视频）。");
+  }).catch(function (e) {
+    setStatus("err", "❌ 更新失败（" + e.message + "）：请检查手机网络，或确认 files.aqmdtmx.cn 的 DNS 记录已加且已生效；也可以等一会儿再点一次。");
+  }).finally(function () {
+    btn.disabled = false; btn.textContent = "🔄 一键更新";
+  });
+}
+
+fetch("files.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+  manifest = j;
+  render();
+  checkService();
+}).catch(function () {
+  document.getElementById("summary").textContent = "清单加载失败，请刷新页面重试。";
+});
+</script>
+</body>
+</html>
