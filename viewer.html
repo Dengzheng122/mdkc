@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>在线看 · 明道工作</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #111; color: #eee; }
+  header { background: #17375e; color: #fff; padding: 12px 16px; }
+  header .row { max-width: 960px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 17px; flex: 1 1 auto; word-break: break-all; }
+  header a { color: #9ecbff; font-size: 14px; text-decoration: none; white-space: nowrap; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 12px 12px 40px; }
+  .route { font-size: 12px; color: #999; margin: 4px 0 10px; }
+  .slide-box { background: #000; border-radius: 10px; overflow: hidden; min-height: 240px; display: flex; align-items: center; justify-content: center; }
+  .slide-box img { width: 100%; display: block; }
+  .slide-box .msg { color: #aaa; padding: 60px 20px; text-align: center; line-height: 1.8; }
+  .ctrl { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
+  button { cursor: pointer; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 15px; background: #17375e; color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+  .page { font-size: 15px; white-space: nowrap; }
+  input[type=range] { flex: 1 1 120px; }
+  .hint { font-size: 12px; color: #999; line-height: 1.8; }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <a href="index.html">‹ 返回看板</a>
+    <h1 id="title">正在加载…</h1>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="route" id="route">正在选择最快的线路…</div>
+  <div class="slide-box" id="box"><div class="msg">正在加载逐页图片…</div></div>
+  <div class="ctrl">
+    <button id="prevBtn" onclick="go(cur - 1)">◀ 上一页</button>
+    <span class="page" id="pageLabel"></span>
+    <input id="slider" type="range" min="1" max="1" value="1" oninput="go(parseInt(this.value, 10))">
+    <button id="nextBtn" onclick="go(cur + 1)">下一页 ▶</button>
+  </div>
+  <div class="hint">键盘 ← → 也能翻页；手机上左右滑动翻页。图片按页加载，当前页看完再加载下一页，在办公室公网也能看。</div>
+</div>
+
+<script>
+var PUBLIC_BASE = "https://files.aqmdtmx.cn/";
+var LAN_BASE = "http://192.168.1.6:3123/";
+var TS_BASE = "http://100.85.187.117:3123/";
+var BASE = PUBLIC_BASE;
+var routeLabel = "公网 files.aqmdtmx.cn";
+
+var params = new URLSearchParams(location.search);
+var pptPath = params.get("f") || "";
+var pptTitle = params.get("t") || pptPath;
+var slidesDir = pptPath.replace(/\.pptx?$/i, "") + ".slides/";
+var pages = 0;
+var cur = 1;
+
+function encPath(p) {
+  return p.split("/").map(function (s) { return encodeURIComponent(s); }).join("/");
+}
+function pad(n) {
+  var w = String(pages).length;
+  var s = String(n);
+  while (s.length < w) s = "0" + s;
+  return s;
+}
+function slideUrl(n) {
+  return BASE + encPath(slidesDir + "p-" + pad(n) + ".jpg");
+}
+function showMsg(html) {
+  document.getElementById("box").innerHTML = '<div class="msg">' + html + "</div>";
+}
+function setRoute(label) {
+  routeLabel = label;
+  document.getElementById("route").textContent = "当前线路：" + label;
+}
+
+function probe(url, ms) {
+  return new Promise(function (resolve) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; resolve(false); } }, ms);
+    fetch(url, { mode: "no-cors", cache: "no-store" }).then(function () {
+      if (!done) { done = true; clearTimeout(t); resolve(true); }
+    }).catch(function () {
+      if (!done) { done = true; clearTimeout(t); resolve(false); }
+    });
+  });
+}
+function pickBase() {
+  if (location.protocol !== "http:") { setRoute("公网 files.aqmdtmx.cn"); return Promise.resolve(); }
+  return probe(LAN_BASE, 2000).then(function (ok) {
+    if (ok) { BASE = LAN_BASE; setRoute("局域网直连 192.168.1.6（现场最快）"); return; }
+    return probe(TS_BASE, 2000).then(function (ok2) {
+      if (ok2) { BASE = TS_BASE; setRoute("Tailscale 直连（不用公网绕路）"); }
+      else setRoute("公网 files.aqmdtmx.cn");
+    });
+  });
+}
+
+function render() {
+  document.getElementById("title").textContent = pptTitle;
+  document.getElementById("pageLabel").textContent = "第 " + cur + " / " + pages + " 页";
+  document.getElementById("slider").max = pages;
+  document.getElementById("slider").value = cur;
+  document.getElementById("prevBtn").disabled = cur <= 1;
+  document.getElementById("nextBtn").disabled = cur >= pages;
+  var box = document.getElementById("box");
+  box.innerHTML = "";
+  var img = document.createElement("img");
+  img.alt = "第 " + cur + " 页";
+  img.src = slideUrl(cur);
+  img.onerror = function () {
+    showMsg("第 " + cur + " 页图片加载失败，请检查网络后刷新重试。<br><a href='index.html' style='color:#9ecbff'>返回看板</a>");
+  };
+  box.appendChild(img);
+  // 预加载下一页
+  if (cur < pages) { var pre = new Image(); pre.src = slideUrl(cur + 1); }
+}
+function go(n) {
+  if (!pages) return;
+  if (n < 1) n = 1;
+  if (n > pages) n = pages;
+  if (n === cur) { render(); return; }
+  cur = n;
+  render();
+}
+
+document.addEventListener("keydown", function (e) {
+  if (e.key === "ArrowLeft") go(cur - 1);
+  if (e.key === "ArrowRight") go(cur + 1);
+});
+var touchX = null;
+document.addEventListener("touchstart", function (e) { touchX = e.changedTouches[0].clientX; }, { passive: true });
+document.addEventListener("touchend", function (e) {
+  if (touchX == null) return;
+  var dx = e.changedTouches[0].clientX - touchX;
+  if (dx < -50) go(cur + 1);
+  if (dx > 50) go(cur - 1);
+  touchX = null;
+}, { passive: true });
+
+pickBase().then(function () {
+  if (!pptPath) { showMsg("没有指定要看的 PPT，请从看板点「在线看」进来。"); return; }
+  fetch(BASE + encPath(slidesDir + "index.json"), { cache: "no-store" }).then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  }).then(function (j) {
+    pages = j.pages || 0;
+    if (!pages) throw new Error("页数为 0");
+    document.getElementById("title").textContent = (j.title || pptTitle);
+    render();
+  }).catch(function () {
+    showMsg("这份 PPT 的逐页图片还没生成或正在转换，请稍后再试。<br><a href='index.html' style='color:#9ecbff'>返回看板</a>");
+  });
+});
+</script>
+</body>
+</html>
