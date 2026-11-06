@@ -48,7 +48,7 @@
   <div class="wrap" style="padding:0">
     <h1>📁 明道工作 · 资料看板</h1>
     <p id="summary">正在加载…</p>
-    <p>文件服务：files.aqmdtmx.cn（公网直达，不用 Tailscale）· 看板：mdkc.aqmdtmx.cn</p>
+    <p>文件服务：<span id="route">正在选择最快的线路…</span> · 看板：mdkc.aqmdtmx.cn</p>
   </div>
 </header>
 
@@ -74,18 +74,53 @@
 
   <footer>
     <b>说明</b><br>
-    1. 视频点「▶ 播放」在上方播放器里直接播，支持拖进度条；PPT 点「在线预览」用微软 Office 在线打开，点「下载」保存到手机/电脑。<br>
-    2. 「一键更新」会实时去文件服务拉最新目录：新增的文件、刚传完的视频都会出现；如果提示失败，多半是文件服务的 DNS 还没生效，等几分钟再点。<br>
-    3. 本看板是公开的 GitHub Pages，文件链接也是公开地址：<b>拿到链接的人就能直接下载这些文件，链接不要随便外传</b>。<br>
-    4. 上传中的临时文件（.~~#0）不会显示；传完变成正式 .mp4 后，点「一键更新」就能看到。
+    1. 视频点「▶ 播放」在上方播放器里直接播，支持拖进度条；PPT 文件都比较大（10–95MB），微软在线预览打不开这么大的文件，点「⬇ 下载」保存到手机/电脑后用 PowerPoint 打开。<br>
+    2. 本看板会自动选最快的线路：在现场（和飞牛同一局域网）走局域网直连，速度最快；在外面走公网 files.aqmdtmx.cn，速度看家里上行带宽。顶部会显示当前走的哪条线。<br>
+    3. 「一键更新」会实时去文件服务拉最新目录：新增的文件、刚传完的视频都会出现；如果提示失败，多半是文件服务的 DNS 还没生效，等几分钟再点。<br>
+    4. 本看板是公开的 GitHub Pages，文件链接也是公开地址：<b>拿到链接的人就能直接下载这些文件，链接不要随便外传</b>。<br>
+    5. 上传中的临时文件（.~~#0）不会显示；传完变成正式 .mp4 后，点「一键更新」就能看到。
   </footer>
 </div>
 
 <script>
-var BASE = "https://files.aqmdtmx.cn/";
+var PUBLIC_BASE = "https://files.aqmdtmx.cn/";
+var LAN_BASE = "http://192.168.1.6:3123/";
+var TS_BASE = "http://100.85.187.117:3123/";
+var BASE = PUBLIC_BASE;   // 默认走公网；下面启动时先探测局域网/Tailscale，通了就改走快的
+var routeLabel = "公网 files.aqmdtmx.cn";
 var manifest = null;      // {files:[...]}
 var filterType = "";
 var updatedNote = "";
+
+// 探测一条线路通不通：2 秒内有响应就算通（no-cors，不透明响应也算通）
+function probe(url, ms) {
+  return new Promise(function (resolve) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; resolve(false); } }, ms);
+    fetch(url, { mode: "no-cors", cache: "no-store" }).then(function () {
+      if (!done) { done = true; clearTimeout(t); resolve(true); }
+    }).catch(function () {
+      if (!done) { done = true; clearTimeout(t); resolve(false); }
+    });
+  });
+}
+
+// 只在 http 页面下才能用 http 的局域网/Tailscale 地址（https 页面会拦截混合内容）
+function pickBase() {
+  var el = document.getElementById("route");
+  function setRoute(label) {
+    routeLabel = label;
+    if (el) el.textContent = label;
+  }
+  if (location.protocol !== "http:") { setRoute("公网 files.aqmdtmx.cn"); return Promise.resolve(); }
+  return probe(LAN_BASE, 2000).then(function (ok) {
+    if (ok) { BASE = LAN_BASE; setRoute("局域网直连 192.168.1.6（现场最快）"); return; }
+    return probe(TS_BASE, 2000).then(function (ok2) {
+      if (ok2) { BASE = TS_BASE; setRoute("Tailscale 直连（不用公网绕路）"); }
+      else setRoute("公网 files.aqmdtmx.cn");
+    });
+  });
+}
 
 function encPath(p) {
   return p.split("/").map(function (s) { return encodeURIComponent(s); }).join("/");
@@ -142,8 +177,8 @@ function cardHtml(f) {
   } else if (f.type === "pdf") {
     h += '<a href="' + url + '" target="_blank"><button class="btn-primary btn-small">📄 在线查看</button></a>';
   } else if (f.type === "ppt") {
-    var office = "https://view.officeapps.live.com/op/view.aspx?src=" + encodeURIComponent(url);
-    h += '<a href="' + office + '" target="_blank"><button class="btn-primary btn-small">👁 在线预览</button></a>';
+    h += '<a href="' + url + '" download><button class="btn-primary btn-small">⬇ 下载后用 PowerPoint 打开</button></a>';
+    h += '<div class="meta" style="margin-top:6px">文件较大（' + fmtSize(f.size) + '），微软在线预览打不开，请下载后打开。</div>';
   } else if (f.type === "image") {
     h += '<a href="' + url + '" target="_blank"><button class="btn-primary btn-small">🔍 看大图</button></a>';
   }
@@ -189,10 +224,10 @@ function setStatus(cls, text) {
 
 function checkService() {
   fetch(BASE, { mode: "cors", cache: "no-store" }).then(function (r) {
-    if (r.ok) setStatus("ok", "✅ 文件服务已连通（files.aqmdtmx.cn），视频和 PPT 都能直接打开。");
+    if (r.ok) setStatus("ok", "✅ 文件服务已连通（当前走" + routeLabel + "），视频和 PPT 都能直接打开。");
     else setStatus("err", "⚠️ 文件服务返回异常（HTTP " + r.status + "），文件可能暂时打不开，稍后再试。");
   }).catch(function () {
-    setStatus("warn", "⚠️ 还没连上文件服务（files.aqmdtmx.cn）：多半是 DNS 记录还没加或没生效。加完记录等几分钟再刷新本页；看板本身不受影响。");
+    setStatus("warn", "⚠️ 还没连上文件服务（" + routeLabel + "）：多半是 DNS 记录还没加或没生效。加完记录等几分钟再刷新本页；看板本身不受影响。");
   });
 }
 
@@ -266,12 +301,14 @@ function refreshList() {
   });
 }
 
-fetch("files.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
-  manifest = j;
-  render();
-  checkService();
-}).catch(function () {
-  document.getElementById("summary").textContent = "清单加载失败，请刷新页面重试。";
+pickBase().then(function () {
+  fetch("files.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+    manifest = j;
+    render();
+    checkService();
+  }).catch(function () {
+    document.getElementById("summary").textContent = "清单加载失败，请刷新页面重试。";
+  });
 });
 </script>
 </body>
