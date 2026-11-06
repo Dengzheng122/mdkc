@@ -74,7 +74,7 @@
 
   <footer>
     <b>说明</b><br>
-    1. 视频点「▶ 播放」在上方播放器里直接播，支持拖进度条；PPT 文件都比较大（10–95MB），微软在线预览打不开这么大的文件，点「⬇ 下载」保存到手机/电脑后用 PowerPoint 打开。<br>
+    1. 视频点「▶ 播放」在上方播放器里直接播，支持拖进度条；PPT 点「▶ 在线看」在看板里逐页翻（和细胞智库课件一样），点「⬇ 下载原文件」保存 PPT。<br>
     2. 本看板会自动选最快的线路：在现场（和飞牛同一局域网）走局域网直连，速度最快；在外面走公网 files.aqmdtmx.cn，速度看家里上行带宽。顶部会显示当前走的哪条线。<br>
     3. 「一键更新」会实时去文件服务拉最新目录：新增的文件、刚传完的视频都会出现；如果提示失败，多半是文件服务的 DNS 还没生效，等几分钟再点。<br>
     4. 本看板是公开的 GitHub Pages，文件链接也是公开地址：<b>拿到链接的人就能直接下载这些文件，链接不要随便外传</b>。<br>
@@ -177,8 +177,9 @@ function cardHtml(f) {
   } else if (f.type === "pdf") {
     h += '<a href="' + url + '" target="_blank"><button class="btn-primary btn-small">📄 在线查看</button></a>';
   } else if (f.type === "ppt") {
-    h += '<a href="' + url + '" download><button class="btn-primary btn-small">⬇ 下载后用 PowerPoint 打开</button></a>';
-    h += '<div class="meta" style="margin-top:6px">文件较大（' + fmtSize(f.size) + '），微软在线预览打不开，请下载后打开。</div>';
+    var viewUrl = "viewer.html?f=" + encodeURIComponent(f.path) + "&t=" + encodeURIComponent(f.name);
+    h += '<a href="' + viewUrl + '"><button class="btn-primary btn-small">▶ 在线看</button></a>';
+    h += '<a href="' + url + '" download><button class="btn-ghost btn-small">⬇ 下载原文件</button></a>';
   } else if (f.type === "image") {
     h += '<a href="' + url + '" target="_blank"><button class="btn-primary btn-small">🔍 看大图</button></a>';
   }
@@ -191,6 +192,7 @@ function render() {
   if (!manifest) return;
   var q = document.getElementById("q").value.trim().toLowerCase();
   var files = manifest.files.filter(function (f) {
+    if (f.path.indexOf(".slides/") !== -1) return false;  // 逐页图片只给翻页器用，不在列表里单列
     if (filterType && f.type !== filterType) return false;
     if (q && f.name.toLowerCase().indexOf(q) === -1) return false;
     return true;
@@ -273,7 +275,11 @@ function refreshList() {
       var items = parseAutoindex(html, prefix);
       var subs = [];
       items.forEach(function (it) {
-        if (it.isDir) subs.push(it);
+        if (it.isDir) {
+          var dname0 = it.name.replace(/\/$/, "");
+          if (/\.slides$/.test(dname0)) return;  // 逐页图片目录不展开
+          subs.push(it);
+        }
         else found.push({ dir: prefix, name: it.name, path: (prefix ? prefix + "/" : "") + it.name,
                           size: it.size, mtime: it.mtime, type: typeOf(it.name) });
       });
