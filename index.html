@@ -245,7 +245,8 @@ function refreshList() {
       var chain = Promise.resolve();
       subs.forEach(function (s) {
         chain = chain.then(function () {
-          return walk(url + encodeURIComponent(s.name) + "/", (prefix ? prefix + "/" : "") + s.name);
+          var dname = s.name.replace(/\/$/, "");
+          return walk(url + encodeURIComponent(dname) + "/", (prefix ? prefix + "/" : "") + dname);
         });
       });
       return chain;
